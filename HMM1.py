@@ -27,6 +27,8 @@ punc = ['\n', '“', '”', '[', ']']
 punc_pattern = r"([。！？，、（）“”；：《》\s+]/w)"
 method = 'adding-one'
 # method = 'good-turing'
+fb = 'forward'
+# fb = 'backward'
 
 
 def del_punc(word):
@@ -96,29 +98,39 @@ def run(path):
                 n = len(wordlist)
                 if n == 0:
                     continue
-                alpha = np.zeros((N1, n+1))
-                for i in range(N1):
-                    alpha[i][0] = count(speech_list[i], P)
-                for t in range(n):
-                    for j in range(N1):
-                        for i in range(N1):
-                            trans = count((speech_list[i], speech_list[j]), A)
-                            if trans == 0:
-                                trans = 1 / N1
-                            gen = count((speech_list[i], wordlist[t][0]), B)
-                            if gen == 0:
-                                gen = 1 / N1
-                            alpha[j][t+1] += alpha[i][t] * trans * gen
-                # print(alpha[:, n].shape)
-                # exit(2)
-                # print(alpha)
-                prob = logsumexp(alpha[:, n])
-                if prob != 0:
-                    PPS = math.pow(prob, -1/n)
-                    PPS_list.append(PPS)
+                if fb == 'forward':
+                    alpha = np.zeros((N1, n+1))
+                    for i in range(N1):
+                        start = count(speech_list[i], P)
+                        # if start == 0:
+                        #     start = 1 / len(P)
+                        alpha[i][0] = start
+                    for t in range(n):
+                        for j in range(N1):
+                            for i in range(N1):
+                                trans = count((speech_list[i], speech_list[j]), A)
+                                if trans == 0:
+                                    trans = 1 / N1
+                                gen = count((speech_list[i], speech_list[j], wordlist[t][0]), B)
+                                if gen == 0:
+                                    gen = 1 / N2
+                                alpha[j][t+1] += alpha[i][t] * trans * gen
+                    # print(alpha[:, n])
+                    # prob = 0
+                    # for i in range(N1):
+                    #     prob += alpha[i][n]
+                    # prob = logsumexp(alpha[:, n])
+                    prob = np.sum(alpha[:, n])
+                    # print(alpha.shape, prob)
+                    if prob != 0:
+                        PPS = math.pow(prob, -1/n)
+                        PPS_list.append(PPS)
             ccc += 1
-            if ccc % 50 == 0:
+            if ccc % 1 == 0:
+                # print("===================")
                 print(ccc)
+                print(np.mean(PPS_list))
+                # exit(2)
 
     ans = np.array(PPS_list)
     return ans
@@ -144,10 +156,10 @@ def construct_from_train_set():
                 for i in range(n):
                     oi, Xi = wordlist[i]
                     put_stuff_into_count_dict(Xi, S1)
-                    put_stuff_into_count_dict((Xi, oi), SW)
                     if i < n - 1:
                         oj, Xj = wordlist[i + 1]
                         put_stuff_into_count_dict((Xi, Xj), S2)
+                        put_stuff_into_count_dict((Xi, Xj, oi), SW)
 
 
 construct_from_train_set()
@@ -165,12 +177,12 @@ for key in P.keys():
 for item in S2.items():
     si, sj = item[0]
     cnt = item[1]
-    A[(si, sj)] = (cnt + 1) / (S1[si] + N1)   # (cnt / N2) / (S1[si] / N1)
+    A[(si, sj)] = (cnt + 1) / (S1[si] + N1)
 # B, 生成概率矩阵
 for item in SW.items():
-    si, wk = item[0]
+    si, sj, wk = item[0]
     cnt = item[1]
-    B[(si, wk)] = (cnt + 1) / (S1[si] + N1)   # (cnt / N_sw) / (S1[si] / N1)
+    B[(si, sj, wk)] = (cnt + 1) / (S2[(si, sj)] + N2)
 
 print(N1, N2, N_sw, len(P), len(A), len(B))
 
