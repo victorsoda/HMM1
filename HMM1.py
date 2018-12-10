@@ -16,7 +16,6 @@ TEST_PATH = "../data/test/"
 # X_t: hidden state, speech
 # o_t: output state, word
 
-bi_N = 0   # 所有bigram出现的总次数
 S1 = {}  # key: speech    value: count
 S2 = {}  # key: (speech_i, speech_{i+1})    value: count
 SW = {}  # key: (speech_i, word_i)    value: count
@@ -25,10 +24,10 @@ A = {}   # key: (si, sj)    value: P(X_{t+1}sj | si)
 B = {}   # key: (si, wk)    value: P(wk | si)
 punc = ['\n', '“', '”', '[', ']']
 punc_pattern = r"([。！？\s+]/w)"
-method = 'adding-one'
-# method = 'good-turing'
-# fb = 'forward'
-fb = 'backward'
+# method = 'adding-one'
+method = 'good-turing'
+fb = 'forward'
+# fb = 'backward'
 
 
 def del_punc(word):
@@ -80,6 +79,20 @@ def sentence_to_wordlist(s):
     return wordlist
 
 
+def r_star(word, V, Nr):
+    try:
+        if word not in V.keys():  # 没有出现过的词
+            return Nr[1]
+        r = V[word]
+        if r+1 not in Nr.keys() or r not in Nr.keys():   # TODO: 后半句是自己瞎加的
+            return r - 1  # 对于稀疏高频词（它的频率r，但不存在频率r+1的词）拟合结果
+        else:
+            return (r + 1) * Nr[r+1] / Nr[r]  # 否则使用Good Turing公式近似概率
+    except KeyError as e:
+        print(V[word])
+
+
+
 def run(path):
     """
     对path路径下的所有句子，计算句子的概率。
@@ -103,18 +116,25 @@ def run(path):
                     alpha = np.zeros((N1, n+1))
                     for i in range(N1):
                         start = count(speech_list[i], P)
-                        # if start == 0:
-                        #     start = 1 / len(P)
+                        # if method == 'adding-one':
+                        #     if start == 0:
+                        #         start = 1 / len(P)
                         alpha[i][0] = start
                     for t in range(n):
                         for j in range(N1):
                             for i in range(N1):
-                                trans = count((speech_list[i], speech_list[j]), A)
+                                trans = count((speech_list[i], speech_list[j]), A)  # 转移概率a_{ij}
                                 if trans == 0:
-                                    trans = 1 / N1
-                                gen = count((speech_list[i], speech_list[j], wordlist[t][0]), B)
+                                    if method == 'adding-one':
+                                        trans = 1 / N1
+                                    elif method == 'good-turing':
+                                        trans = (r_star((si, sj), S2, S2_Nr) / S2_N) / (r_star(si, S1, S1_Nr) / S1_N)
+                                gen = count((speech_list[i], speech_list[j], wordlist[t][0]), B)    # 生成概率b_{ijk}
                                 if gen == 0:
-                                    gen = 1 / N2
+                                    if method == 'adding-one':
+                                        gen = 1 / N2
+                                    elif method == 'good-turing':
+                                        gen = (r_star((si, sj, wk), SW, SW_Nr) / SW_N) / (r_star((si, sj), S2, SW_Nr) / SW_N)
                                 alpha[j][t+1] += alpha[i][t] * trans * gen
                     prob = np.sum(alpha[:, n])
                 elif fb == 'backward':
@@ -140,9 +160,9 @@ def run(path):
                     print("prob of sentence = 0!")
 
             ccc += 1
-            if ccc % 50 == 0:
+            if ccc % 1 == 0:
                 print(ccc)
-            #     print(np.mean(PPS_list))
+                print(np.mean(PPS_list))
                 # exit(2)
 
     ans = np.array(PPS_list)
@@ -182,8 +202,13 @@ N2 = len(S2)    # total of speech pair (speech_i, speech_{i+1}) = 1033
 N_sw = len(SW)  # total of (speech, word) pair = 56096
 speech_list = list(S1.keys())
 P_Nr = {}   # key: 出现的频次c    value:在P中出现c次的词性的个数
-A_Nr = {}
-B_Nr = {}
+S1_Nr = {}
+S2_Nr = {}
+SW_Nr = {}
+P_N = sum(P.values())     # 所有P中词性(key)出现的次数总和，即sum(P.values())
+S1_N = sum(S1.values())
+S2_N = sum(S2.values())
+SW_N = sum(SW.values())
 
 
 if method == 'adding-one':
@@ -202,8 +227,28 @@ if method == 'adding-one':
         cnt = item[1]
         B[(si, sj, wk)] = (cnt + 1) / (S2[(si, sj)] + N2)
 elif method == 'good-turing':
+    for c in S1.values():
+        put_stuff_into_count_dict(c, S1_Nr)
     for c in P.values():
         put_stuff_into_count_dict(c, P_Nr)
+    for c in S2.values():
+        put_stuff_into_count_dict(c, S2_Nr)
+    for c in SW.values():
+        put_stuff_into_count_dict(c, SW_Nr)
+    # Pi, 初始概率
+    for key in P.keys():    # TODO: 没有在P中出现过的词性，怎么用Good Turing平滑化？
+        P[key] = r_star(key, P, P_Nr) / P_N
+    # A, 转移概率矩阵
+    for item in S2.items():
+        si, sj = item[0]
+        cnt = item[1]
+        A[(si, sj)] = (r_star((si, sj), S2, S2_Nr) / S2_N) / (r_star(si, S1, S1_Nr) / S1_N)
+    # B, 生成概率矩阵
+    for item in SW.items():
+        si, sj, wk = item[0]
+        cnt = item[1]
+        B[(si, sj, wk)] = (r_star((si, sj, wk), SW, SW_Nr) / SW_N) / (r_star((si, sj), S2, SW_Nr) / SW_N)
+
 
 print(N1, N2, N_sw, len(P), len(A), len(B))
 
