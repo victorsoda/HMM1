@@ -24,11 +24,11 @@ P = {}   # key: si    value: P(X1=si)
 A = {}   # key: (si, sj)    value: P(X_{t+1}sj | si)
 B = {}   # key: (si, wk)    value: P(wk | si)
 punc = ['\n', '“', '”', '[', ']']
-punc_pattern = r"([。！？，、（）“”；：《》\s+]/w)"
+punc_pattern = r"([。！？\s+]/w)"
 method = 'adding-one'
 # method = 'good-turing'
-fb = 'forward'
-# fb = 'backward'
+# fb = 'forward'
+fb = 'backward'
 
 
 def del_punc(word):
@@ -98,6 +98,7 @@ def run(path):
                 n = len(wordlist)
                 if n == 0:
                     continue
+                prob = 0
                 if fb == 'forward':
                     alpha = np.zeros((N1, n+1))
                     for i in range(N1):
@@ -115,21 +116,33 @@ def run(path):
                                 if gen == 0:
                                     gen = 1 / N2
                                 alpha[j][t+1] += alpha[i][t] * trans * gen
-                    # print(alpha[:, n])
-                    # prob = 0
-                    # for i in range(N1):
-                    #     prob += alpha[i][n]
-                    # prob = logsumexp(alpha[:, n])
                     prob = np.sum(alpha[:, n])
-                    # print(alpha.shape, prob)
-                    if prob != 0:
-                        PPS = math.pow(prob, -1/n)
-                        PPS_list.append(PPS)
+                elif fb == 'backward':
+                    beta = np.zeros((N1, n+1))
+                    for i in range(N1):
+                        beta[i][n] = 1
+                    for t in range(n-1, -1, -1):
+                        for i in range(N1):
+                            for j in range(N1):
+                                trans = count((speech_list[i], speech_list[j]), A)
+                                if trans == 0:
+                                    trans = 1 / N1
+                                gen = count((speech_list[i], speech_list[j], wordlist[t][0]), B)
+                                if gen == 0:
+                                    gen = 1 / N2
+                                beta[i][t] += beta[j][t+1] * trans * gen
+                    for i in range(N1):
+                        prob += count(speech_list[i], P) * beta[i][0]
+                if prob != 0:
+                    PPS = math.pow(prob, -1 / n)
+                    PPS_list.append(PPS)
+                else:
+                    print("prob of sentence = 0!")
+
             ccc += 1
-            if ccc % 1 == 0:
-                # print("===================")
+            if ccc % 50 == 0:
                 print(ccc)
-                print(np.mean(PPS_list))
+            #     print(np.mean(PPS_list))
                 # exit(2)
 
     ans = np.array(PPS_list)
@@ -168,23 +181,36 @@ N1 = len(S1)    # total of speeches = 41
 N2 = len(S2)    # total of speech pair (speech_i, speech_{i+1}) = 1033
 N_sw = len(SW)  # total of (speech, word) pair = 56096
 speech_list = list(S1.keys())
+P_Nr = {}   # key: 出现的频次c    value:在P中出现c次的词性的个数
+A_Nr = {}
+B_Nr = {}
 
-# Pi, 初始概率
-P_total = sum(P.values())
-for key in P.keys():
-    P[key] = (P[key] + 1) / (P_total + len(P))
-# A, 转移概率矩阵
-for item in S2.items():
-    si, sj = item[0]
-    cnt = item[1]
-    A[(si, sj)] = (cnt + 1) / (S1[si] + N1)
-# B, 生成概率矩阵
-for item in SW.items():
-    si, sj, wk = item[0]
-    cnt = item[1]
-    B[(si, sj, wk)] = (cnt + 1) / (S2[(si, sj)] + N2)
+
+if method == 'adding-one':
+    # Pi, 初始概率
+    P_total = sum(P.values())
+    for key in P.keys():
+        P[key] = (P[key] + 1) / (P_total + len(P))
+    # A, 转移概率矩阵
+    for item in S2.items():
+        si, sj = item[0]
+        cnt = item[1]
+        A[(si, sj)] = (cnt + 1) / (S1[si] + N1)
+    # B, 生成概率矩阵
+    for item in SW.items():
+        si, sj, wk = item[0]
+        cnt = item[1]
+        B[(si, sj, wk)] = (cnt + 1) / (S2[(si, sj)] + N2)
+elif method == 'good-turing':
+    for c in P.values():
+        put_stuff_into_count_dict(c, P_Nr)
 
 print(N1, N2, N_sw, len(P), len(A), len(B))
 
-PPS_list_valid = run(VALID_PATH)
-print("PPS(valid):", np.mean(PPS_list_valid))
+# PPS_list_valid = run(VALID_PATH)
+# print("PPS(valid):", np.mean(PPS_list_valid))
+PPS_list_test = run(TEST_PATH)
+print("PPS(test):", np.mean(PPS_list_test))
+fb = 'forward'
+PPS_list_test = run(TEST_PATH)
+print("PPS(test):", np.mean(PPS_list_test))
