@@ -84,12 +84,12 @@ def r_star(word, V, Nr):
         if word not in V.keys():  # 没有出现过的词
             return Nr[1]
         r = V[word]
-        if r+1 not in Nr.keys() or r not in Nr.keys():   # TODO: 后半句是自己瞎加的
-            return r - 1  # 对于稀疏高频词（它的频率r，但不存在频率r+1的词）拟合结果
+        if r > 11 or r+1 not in Nr.keys():
+            return r  # 对于稀疏高频词（它的频率r，但不存在频率r+1的词）拟合结果
         else:
             return (r + 1) * Nr[r+1] / Nr[r]  # 否则使用Good Turing公式近似概率
     except KeyError as e:
-        print(V[word])
+        print("KeyError!", V[word])
 
 
 
@@ -101,6 +101,22 @@ def run(path):
     """
     PPS_list = []
     ccc = 0
+
+    # N0_S2 = 0
+    # N0_SW = 0
+    #
+    #
+    # for file in os.listdir(path):
+    #     with open(path + file, 'r', encoding='gbk') as f:
+    #         # print(file)
+    #         article = f.read()
+    #         sentences = article_to_sentences(article)
+    #         for s in sentences:
+    #             wordlist = sentence_to_wordlist(s)
+    #             n = len(wordlist)
+
+
+
     for file in os.listdir(path):
         with open(path + file, 'r', encoding='gbk') as f:
             # print(file)
@@ -134,7 +150,7 @@ def run(path):
                                     if method == 'adding-one':
                                         gen = 1 / N2
                                     elif method == 'good-turing':
-                                        gen = (r_star((si, sj, wk), SW, SW_Nr) / SW_N) / (r_star((si, sj), S2, SW_Nr) / SW_N)
+                                        gen = (r_star((si, sj, wk), SW, SW_Nr) / SW_N) / (r_star((si, sj), S2, S2_Nr) / S2_N)
                                 alpha[j][t+1] += alpha[i][t] * trans * gen
                     prob = np.sum(alpha[:, n])
                 elif fb == 'backward':
@@ -247,7 +263,7 @@ elif method == 'good-turing':
     for item in SW.items():
         si, sj, wk = item[0]
         cnt = item[1]
-        B[(si, sj, wk)] = (r_star((si, sj, wk), SW, SW_Nr) / SW_N) / (r_star((si, sj), S2, SW_Nr) / SW_N)
+        B[(si, sj, wk)] = (r_star((si, sj, wk), SW, SW_Nr) / SW_N) / (r_star((si, sj), S2, S2_Nr) / S2_N)
 
 
 print(N1, N2, N_sw, len(P), len(A), len(B))
